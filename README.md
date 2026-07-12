@@ -1,6 +1,6 @@
 # IoT Assignment — Embedded IoT Intern
 
-**Candidate:** [Your Full Name]  
+**Candidate:** Toshal Kumbhar  
 **Date:** July 2026  
 **Assignment:** Take-Home Embedded IoT Intern Assignment — Sparkline
 
