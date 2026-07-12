@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sparkline IoT Assignment - Monitoring Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.14.1/mqtt.min.js"></script>
+<style>
+  /* Reset & Core Tokens */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #09090b;
+    color: #f4f4f5;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px 24px;
+  }
+
+  /* Header */
+  header { margin-bottom: 40px; }
+  header h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: #ffffff;
+  }
+  header p {
+    color: #71717a;
+    font-size: 0.925rem;
+    margin-top: 4px;
+  }
+
+  /* Modern Pill Navigation */
+  .nav {
+    display: flex;
+    gap: 6px;
+    background: #18181b;
+    padding: 4px;
+    border-radius: 8px;
+    border: 1px solid #27272a;
+    margin-bottom: 32px;
+    width: fit-content;
+    flex-wrap: wrap;
+  }
+  .nav-btn {
+    background: transparent;
+    border: none;
+    color: #a1a1aa;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.15s ease;
+  }
+  .nav-btn:hover { color: #f4f4f5; }
+  .nav-btn.active { background: #27272a; color: #ffffff; }
+
+  /* Grid & Layout Structure */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+  .two-col { grid-template-columns: 1.2fr 0.8fr; }
+  @media(max-width: 900px){ .two-col { grid-template-columns: 1fr; } }
+  .full-width { grid-column: 1 / -1; }
+
+  /* Minimalist Cards */
+  .card {
+    background: #09090b;
+    border: 1px solid #27272a;
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .card h2 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #ffffff;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    letter-spacing: -0.01em;
+  }
+
+  /* Micro Status Indicators */
+  .card h2 .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+  .dot-green { background: #10b981; box-shadow: 0 0 8px rgba(16,185,129,0.4); }
+  .dot-blue { background: #3b82f6; box-shadow: 0 0 8px rgba(59,130,246,0.4); }
+  .dot-orange { background: #f97316; box-shadow: 0 0 8px rgba(249,115,22,0.4); }
+  .dot-red { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.4); }
+  .dot-purple { background: #a855f7; box-shadow: 0 0 8px rgba(168,85,247,0.4); }
+  .dot-cyan { background: #22d3ee; box-shadow: 0 0 8px rgba(34,211,238,0.4); }
+
+  /* Tabular Metrics Rows */
+  .metric {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 0; border-bottom: 1px solid #18181b;
+  }
+  .metric:last-of-type { border-bottom: none; }
+  .metric-label { color: #a1a1aa; font-size: 0.87rem; }
+  .metric-value { font-weight: 500; font-size: 0.87rem; font-variant-numeric: tabular-nums; }
+
+  /* Semantic Typography States */
+  .value-ok { color: #10b981; }
+  .value-warn { color: #f59e0b; }
+  .value-danger { color: #f43f5e; }
+  .value-info { color: #3b82f6; }
+  .value-cyan { color: #22d3ee; }
+
+  /* Badges */
+  .badge {
+    display: inline-flex; align-items: center; padding: 2px 8px;
+    border-radius: 4px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.03em;
+  }
+  .badge-green { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.15); }
+  .badge-orange { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.15); }
+  .badge-red { background: rgba(244,63,94,0.1); color: #f43f5e; border: 1px solid rgba(244,63,94,0.15); }
+  .badge-blue { background: rgba(59,130,246,0.1); color: #3b82f6; border: 1px solid rgba(59,130,246,0.15); }
+  .badge-cyan { background: rgba(34,211,238,0.1); color: #22d3ee; border: 1px solid rgba(34,211,238,0.15); }
+
+  /* Tables */
+  .table-container { overflow-x: auto; margin: -4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left; }
+  th, td { padding: 14px 16px; border-bottom: 1px solid #18181b; }
+  th { color: #71717a; font-weight: 500; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; background: #09090b; }
+  td { color: #e4e4e7; }
+  tr:hover td { background: #141417; }
+
+  /* Code Editor Block */
+  .code-block {
+    background: #09090b; border-radius: 8px; padding: 18px;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; line-height: 1.6;
+    overflow-x: auto; border: 1px solid #27272a; color: #e4e4e7;
+  }
+  .code-block .comment { color: #52525b; }
+  .code-block .string { color: #a1a1aa; font-weight: 500; }
+  .code-block .keyword { color: #ffffff; font-weight: 600; }
+  .code-block .number { color: #e4e4e7; }
+
+  /* ISO Progress Bar */
+  .progress-bar {
+    display: flex; height: 6px; background: #18181b; border-radius: 3px;
+    overflow: hidden; margin-top: 16px;
+  }
+  .progress-fill { height: 100%; transition: width .5s ease; }
+  .zone-a { background: #10b981; opacity: 0.6; }
+  .zone-b { background: #3b82f6; opacity: 0.8; }
+  .zone-c { background: #f59e0b; opacity: 0.8; }
+  .zone-d { background: #f43f5e; }
+  .zone-labels { display: flex; justify-content: space-between; font-size: 0.7rem; font-family: 'JetBrains Mono', monospace; color: #52525b; margin-top: 6px; }
+
+  /* Form & Chart UI (New Additions) */
+  .input-group { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .input-field {
+    background: #18181b; border: 1px solid #27272a; color: #f4f4f5;
+    padding: 8px 12px; border-radius: 6px; font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem; flex: 1; min-width: 200px; outline: none; transition: border 0.2s;
+  }
+  .input-field:focus { border-color: #22d3ee; }
+  
+  .btn {
+    padding: 8px 16px; border-radius: 6px; font-size: 0.85rem; font-weight: 600;
+    cursor: pointer; border: 1px solid transparent; transition: all 0.2s;
+  }
+  .btn-primary { background: #22d3ee; color: #04141a; border-color: #22d3ee; }
+  .btn-primary:hover { filter: brightness(1.1); }
+  .btn-secondary { background: #18181b; color: #f4f4f5; border-color: #27272a; }
+  .btn-secondary:hover { border-color: #22d3ee; color: #22d3ee; }
+
+  .chart-shell {
+    position: relative; height: 260px; border: 1px solid #27272a; 
+    border-radius: 8px; background: #09090b; margin-bottom: 10px; overflow: hidden;
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+  .chart-caption {
+    font-size: 0.74rem; color: #71717a; font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 8px;
+  }
+  .chart-summary {
+    font-size: 0.78rem; color: #e4e4e7; font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 12px;
+  }
+  
+  .empty-state {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 6px; color: #71717a;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; text-align: center; padding: 20px;
+  }
+  .empty-state b { color: #f4f4f5; font-family: 'Inter', sans-serif; font-size: 0.9rem;}
+  
+  .readout-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 16px; border-top: 1px solid #18181b; padding-top: 16px;
+  }
+  .ro-label { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: #71717a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+  .ro-value { font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; font-weight: 600; }
+  .ro-small { font-size: 0.85rem; font-weight: 400; color: #e4e4e7; }
+
+  /* Media Frame Placeholder */
+  .img-placeholder { background: #09090b; border: 1px dashed #27272a; border-radius: 8px; padding: 56px 24px; text-align: center; }
+  .img-placeholder p.title { font-size: 0.95rem; font-weight: 500; color: #ffffff; margin-bottom: 6px; }
+  .img-placeholder p.desc { font-size: 0.85rem; color: #71717a; max-width: 500px; margin: 0 auto; }
+  
+  /* Section Toggle Utility */
+  .section { display: none; }
+  .section.active { display: block; animation: fadeIn 0.2s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>Sparkline IoT Assignment - Monitoring Dashboard</h1>
+    <p>Embedded IoT Intern — Take-Home Assignment Overview</p>
+  </header>
+
+  <div class="nav">
+    <button class="nav-btn active" onclick="showSection(this, 'overview')">Overview</button>
+    <button class="nav-btn" onclick="showSection(this, 'part-a')">Part A: Sensors</button>
+    <button class="nav-btn" onclick="showSection(this, 'part-b')">Part B: Gateway & Live Data</button>
+    <button class="nav-btn" onclick="showSection(this, 'part-c')">Part C: Decode</button>
+    <button class="nav-btn" onclick="showSection(this, 'results')">Results & Plot</button>
+  </div>
+
+  <div id="overview" class="section active">
+    <div class="grid">
+      <div class="card">
+        <h2><span class="dot dot-green"></span>Assignment Status</h2>
+        <div class="metric"><span class="metric-label">Part A</span><span class="metric-value value-ok"><span class="badge badge-green">COMPLETE</span></span></div>
+        <div class="metric"><span class="metric-label">Part B</span><span class="metric-value value-ok"><span class="badge badge-green">COMPLETE</span></span></div>
+        <div class="metric"><span class="metric-label">Part C</span><span class="metric-value value-ok"><span class="badge badge-green">COMPLETE</span></span></div>
+        <div class="metric"><span class="metric-label">Dashboard</span><span class="metric-value value-ok"><span class="badge badge-green">ACTIVE</span></span></div>
+      </div>
+      <div class="card">
+        <h2><span class="dot dot-blue"></span>Key Findings</h2>
+        <div class="metric"><span class="metric-label">Decoding Fix</span><span class="metric-value value-warn">Word Order Swapped</span></div>
+        <div class="metric"><span class="metric-label">Data Dropout</span><span class="metric-value value-danger">300 samples</span></div>
+        <div class="metric"><span class="metric-label">Peak Temperature</span><span class="metric-value value-warn">63.3°C</span></div>
+        <div class="metric"><span class="metric-label">Vibration End</span><span class="metric-value value-danger">9.89 mm/s</span></div>
+      </div>
+      <div class="card">
+        <h2><span class="dot dot-orange"></span>ISO 10816 Zones</h2>
+        <p style="color:#71717a; font-size:0.8rem; margin-top: -8px; margin-bottom: 12px">Medium machine, Group 2 (15-300 kW)</p>
+        <div class="metric"><span class="metric-label">Start (2.37 mm/s)</span><span class="metric-value value-ok">Zone B</span></div>
+        <div class="metric"><span class="metric-label">End (9.89 mm/s)</span><span class="metric-value value-danger">Zone D</span></div>
+        <div>
+          <div class="progress-bar">
+            <div class="progress-fill zone-a" style="width:14%"></div>
+            <div class="progress-fill zone-b" style="width:28%"></div>
+            <div class="progress-fill zone-c" style="width:31%"></div>
+            <div class="progress-fill zone-d" style="width:27%"></div>
+          </div>
+          <div class="zone-labels"><span>A 1.4</span><span>B 2.8</span><span>C 4.5</span><span>D 7.1</span><span>+</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2><span class="dot dot-purple"></span>Data Quality</h2>
+        <div class="metric"><span class="metric-label">OK Samples</span><span class="metric-value value-ok">1,857</span></div>
+        <div class="metric"><span class="metric-label">Event (kept)</span><span class="metric-value value-warn">755</span></div>
+        <div class="metric"><span class="metric-label">Discarded</span><span class="metric-value value-danger">548</span></div>
+        <div class="metric"><span class="metric-label">Total Expected</span><span class="metric-value value-info">3,600</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="part-a" class="section">
+    <div class="card full-width">
+      <h2><span class="dot dot-green"></span>Part A — Sensor Selection Table</h2>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>Parameter</th><th>Sensor</th><th>Why</th><th>Mount</th><th>Calibrate</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Discharge Pressure</strong></td><td>WIKA A-10 (0-10 bar, 4-20mA, ±0.5%, IP65)</td><td>4-20mA noise-immune; IP65 for dust; &lt;$100</td><td>¼" NPT T-fitting into discharge port</td><td>Dead-weight tester at 0, 3.5, 7, 10 bar</td></tr>
+            <tr><td><strong>Motor Bearing Vibration</strong></td><td>PCB 356A15 IEPE + IFM RMS Converter</td><td>IEPE standard; RMS→4-20mA; magnetic mount; ISO 10816</td><td>Magnetic base on DE bearing housing</td><td>Portable analyzer + shaker table</td></tr>
+            <tr><td><strong>Motor Winding Temp</strong></td><td>RTD Pt100 3-wire + IFM TA2531</td><td>±0.3°C stable; 3-wire compensates leads; &lt;$50</td><td>M12 thermowell in terminal box</td><td>Ice bath (0°C) + boiling water (100°C)</td></tr>
+            <tr><td><strong>Air Flow / Load</strong></td><td>SUTO S401 Thermal Mass (insertion)</td><td>Independent of P/T; hot-tap; detects unloaded run</td><td>½" NPT hot-tap &gt;10D downstream</td><td>Reference rotameter at 3 flow points</td></tr>
+            <tr><td><strong>Oil Temperature</strong></td><td>Omega K-Type + WIKA T32</td><td>400°C range; mineral sheath; vibration-resistant</td><td>¼" NPT into oil sump drain plug</td><td>Contact thermometer + 100°C block</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="part-b" class="section">
+    
+    <div class="card full-width" style="margin-bottom: 24px;">
+      <h2>
+        <span class="dot dot-cyan"></span> Live Telemetry Console 
+        <span id="badgeLive" class="badge badge-cyan" style="display:none; margin-left: 8px;">LIVE</span>
+        <span id="badgeSim" class="badge badge-orange" style="display:none; margin-left: 8px;">SIMULATED</span>
+      </h2>
+      
+      <div class="input-group">
+        <input type="text" id="mqttBroker" class="input-field" value="wss://test.mosquitto.org:8081/mqtt" placeholder="Broker WSS URL">
+        <input type="text" id="mqttTopic" class="input-field" value="sparkline/firstname-lastname/compressor1" placeholder="Topic">
+        <button id="mqttConnectBtn" class="btn btn-primary">Connect</button>
+        <button id="mqttSimBtn" class="btn btn-secondary">Simulate instead</button>
+      </div>
+
+      <div class="chart-shell">
+        <canvas id="stripChart"></canvas>
+        <div id="chartEmptyState" class="empty-state">
+          <b>No telemetry yet.</b>
+          <span>Click Connect to subscribe to the broker, <br>or click "Simulate instead" to preview the chart with synthetic data.</span>
+        </div>
+      </div>
+      <div class="chart-caption">X-axis = recent samples over time • Y-axis = sensor value (pressure, bar)</div>
+      <div id="chartSummary" class="chart-summary">Peak: — • Low: —</div>
+
+      <div class="readout-grid">
+        <div>
+          <div class="ro-label">Connection</div>
+          <div id="roStatus" class="ro-value ro-small" style="color:#71717a">Idle</div>
+        </div>
+        <div>
+          <div class="ro-label">Last value</div>
+          <div id="roValue" class="ro-value">—</div>
+        </div>
+        <div>
+          <div class="ro-label">Sequence</div>
+          <div id="roSeq" class="ro-value">—</div>
+        </div>
+        <div>
+          <div class="ro-label">Msg Rate</div>
+          <div id="roRate" class="ro-value ro-small">—</div>
+        </div>
+        <div>
+          <div class="ro-label">Last Sample (UTC)</div>
+          <div id="roTime" class="ro-value ro-small">—</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="grid two-col">
+      <div class="card">
+        <h2><span class="dot dot-blue"></span>Gateway Features</h2>
+        <div class="metric"><span class="metric-label">Signal</span><span class="metric-value value-info">Discharge pressure ~7 bar</span></div>
+        <div class="metric"><span class="metric-label">Sample Rate</span><span class="metric-value value-info">1 Hz (1 second)</span></div>
+        <div class="metric"><span class="metric-label">Broker</span><span class="metric-value value-info">test.mosquitto.org:1883</span></div>
+        <div class="metric"><span class="metric-label">Topic</span><span class="metric-value value-info" style="font-family:'JetBrains Mono'; font-size:0.75rem;">sparkline/fn-ln/compressor1</span></div>
+        <div class="metric"><span class="metric-label">Store-and-Forward</span><span class="metric-value value-ok">Yes (deque buffer)</span></div>
+        <div class="metric"><span class="metric-label">Reconnection</span><span class="metric-value value-ok">Exponential backoff</span></div>
+        <div class="metric"><span class="metric-label">Config Source</span><span class="metric-value value-ok">gateway.ini + CLI args</span></div>
+      </div>
+      <div class="card">
+        <h2><span class="dot dot-orange"></span>Example JSON Message</h2>
+        <div class="code-block">
+{<br>
+&nbsp;&nbsp;<span class="string">"device_id"</span>: <span class="string">"firstname-lastname-compressor-1"</span>,<br>
+&nbsp;&nbsp;<span class="string">"seq"</span>: <span class="number">1240</span>,<br>
+&nbsp;&nbsp;<span class="string">"timestamp"</span>: <span class="string">"2026-07-05T10:00:00Z"</span>,<br>
+&nbsp;&nbsp;<span class="string">"parameter"</span>: <span class="string">"discharge_pressure"</span>,<br>
+&nbsp;&nbsp;<span class="string">"value"</span>: <span class="number">7.03</span>,<br>
+&nbsp;&nbsp;<span class="string">"unit"</span>: <span class="string">"bar"</span><br>
+}
+        </div>
+        <p style="color: #71717a; font-size: 0.8rem; margin-top: 12px">Published as single-line JSON. Sequence numbers prove no message loss.</p>
+      </div>
+    </div>
+    <div class="card full-width">
+      <h2><span class="dot dot-purple"></span>Store-and-Forward Demonstration</h2>
+      <div class="code-block">
+<span class="comment"># Terminal 1: Start subscriber</span><br>
+$ mosquitto_sub -h test.mosquitto.org -t <span class="string">"sparkline/firstname-lastname/compressor1"</span><br><br>
+<span class="comment"># Terminal 2: Start gateway</span><br>
+$ python gateway.py --config gateway.ini<br><br>
+<span class="comment"># Terminal 3: Simulate 20s outage (Linux)</span><br>
+$ sudo iptables -A OUTPUT -p tcp --dport <span class="number">1883</span> -j DROP<br>
+<span class="comment"># ... observe "Buffered" messages ...</span><br>
+$ sudo iptables -F<br>
+<span class="comment"># ... observe "Flushed" messages — no gap in seq</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="part-c" class="section">
+    <div class="grid">
+      <div class="card">
+        <h2><span class="dot dot-red"></span>Decoding Fix</h2>
+        <div class="metric"><span class="metric-label">Vendor Claim</span><span class="metric-value value-danger">40001=high, 40002=low</span></div>
+        <div class="metric"><span class="metric-label">Actual Data</span><span class="metric-value value-ok">40002=high, 40001=low</span></div>
+        <div class="metric"><span class="metric-label">Row 0 (vendor)</span><span class="metric-value value-danger">1.08e-20 mm/s</span></div>
+        <div class="metric"><span class="metric-label">Row 0 (fixed)</span><span class="metric-value value-ok">2.37 mm/s</span></div>
+        <p style="color: #71717a; font-size: 0.8rem; margin-top: 12px">Classic Modbus word-order bug. Vendor documented standard big-endian but sensor outputs swapped.</p>
+      </div>
+      <div class="card">
+        <h2><span class="dot dot-orange"></span>Discarded Samples</h2>
+        <div class="metric"><span class="metric-label">Dropout</span><span class="metric-value value-danger">300 <span class="badge badge-red">09:20-09:25</span></span></div>
+        <div class="metric"><span class="metric-label">Stuck</span><span class="metric-value value-warn">239 <span class="badge badge-orange">09:10-09:14</span></span></div>
+        <div class="metric"><span class="metric-label">Spike</span><span class="metric-value value-danger">4 <span class="badge badge-red">sentinels</span></span></div>
+        <div class="metric"><span class="metric-label">Malformed</span><span class="metric-value value-warn">5 <span class="badge badge-orange">blank rows</span></span></div>
+        <div class="metric" style="border-top:1px solid #27272a; margin-top:8px; padding-top:12px"><span class="metric-label"><strong style="color: #ffffff; font-weight: 500">TOTAL</strong></span><span class="metric-value value-danger"><strong>548</strong></span></div>
+      </div>
+      <div class="card">
+        <h2><span class="dot dot-green"></span>Real Event Kept</h2>
+        <div class="metric"><span class="metric-label">Type</span><span class="metric-value value-warn">Bearing Degradation</span></div>
+        <div class="metric"><span class="metric-label">Start</span><span class="metric-value value-info">~09:44:00</span></div>
+        <div class="metric"><span class="metric-label">Vibration</span><span class="metric-value value-warn">2.8 → 9.9 mm/s</span></div>
+        <div class="metric"><span class="metric-label">Temperature</span><span class="metric-value value-warn">46°C → 63°C</span></div>
+        <div class="metric"><span class="metric-label">Samples</span><span class="metric-value value-ok">755 labeled "event"</span></div>
+        <p style="color: #71717a; font-size: 0.8rem; margin-top: 12px">Both sensors agree: mechanical degradation, not noise. Correlated rise = real fault.</p>
+      </div>
+    </div>
+    <div class="card full-width">
+      <h2><span class="dot dot-purple"></span>Judgment Call</h2>
+      <p style="color: #a1a1aa; font-size: 0.9rem; line-height: 1.7">
+        I discovered the vendor's register map was wrong when the claimed big-endian word order produced physically impossible vibration values of ~10⁻²⁰ mm/s. I tested the alternative word order (40002 as high word, 40001 as low word) which produced ~2.37 mm/s — a realistic baseline for a running compressor. I kept the bearing degradation event starting at ~09:44:00 because both vibration and temperature rose together in a physically consistent way (vibration climbed from 2.8 to 9.9 mm/s while temperature rose from 46°C to 63°C), which is the signature of real bearing damage rather than sensor noise. I discarded the 48.0°C stuck readings at 09:10-09:14 because 240 identical consecutive values with zero variance is impossible for a real thermal process — a temperature sensor on a running compressor must show at least quantization noise. The 9999.0 vibration spikes were obvious sentinel values (hex 3C00 461C decodes to exactly 9999.0), and the 3275°C temperature readings (hex 7FEE = 32750 decimal) are clearly register overflow sentinels.
+      </p>
+    </div>
+  </div>
+
+  <div id="results" class="section">
+    <div class="card full-width" style="margin-bottom: 24px;">
+      <h2><span class="dot dot-blue"></span>Generated Plot</h2>
+      <div class="img-placeholder" style="padding: 12px; border-style: solid; background: #0f0f11;">
+        <img src="part_c/plot.png" alt="Compressor vibration and temperature plot" style="width: 100%; max-width: 100%; height: auto; display: block; border-radius: 8px; border: 1px solid #27272a;">
+        <p class="desc" style="margin-top: 12px; max-width: none;">Generated by part_c/decode.py — shows vibration (with ISO 10816 zone lines) and temperature over the 1-hour period. Orange dots mark the real bearing degradation event that was kept.</p>
+      </div>
+    </div>
+    <div class="card full-width">
+      <h2><span class="dot dot-green"></span>Cleaned Data Preview</h2>
+      <div class="code-block">
+<span class="comment"># cleaned_data.csv — first 10 rows</span><br>
+timestamp,vibration_mm_s,temperature_c,status<br>
+2026-06-30 09:00:00,2.3678,45.1,ok<br>
+2026-06-30 09:00:01,2.7070,45.0,ok<br>
+2026-06-30 09:00:02,2.8496,45.3,ok<br>
+...<br>
+2026-06-30 09:10:00,,48.0,stuck<br>
+...<br>
+2026-06-30 09:20:00,,,dropout<br>
+...<br>
+2026-06-30 09:44:00,3.5123,46.1,event<br>
+...<br>
+2026-06-30 09:59:59,9.8869,63.3,event
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Tab Switching Logic
+function showSection(button, sectionId) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(sectionId).classList.add('active');
+  button.classList.add('active');
+  
+  // Force canvas redraw if part-b is opened so it scales correctly
+  if(sectionId === 'part-b') {
+    requestAnimationFrame(() => resizeCanvas());
+  }
+}
+
+// Live Telemetry Logic (Canvas & MQTT)
+const canvas = document.getElementById('stripChart');
+const ctx = canvas.getContext('2d');
+const emptyState = document.getElementById('chartEmptyState');
+const chartSummary = document.getElementById('chartSummary');
+
+const roStatus = document.getElementById('roStatus');
+const roValue = document.getElementById('roValue');
+const roSeq = document.getElementById('roSeq');
+const roRate = document.getElementById('roRate');
+const roTime = document.getElementById('roTime');
+
+const badgeLive = document.getElementById('badgeLive');
+const badgeSim = document.getElementById('badgeSim');
+
+let mqttClient = null;
+let simInterval = null;
+let chartData = [];
+const MAX_POINTS = 60; 
+let simSeq = 0;
+let lastMsgTime = 0;
+
+function formatTimestamp(timestampStr) {
+  try {
+    const date = new Date(timestampStr);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    }
+  } catch (e) {}
+
+  try {
+    return timestampStr.split('T')[1].replace('Z', '');
+  } catch (e) {
+    return timestampStr;
+  }
+}
+
+// Resize canvas correctly
+function resizeCanvas() {
+  canvas.width = canvas.parentElement.clientWidth;
+  canvas.height = canvas.parentElement.clientHeight;
+  drawChart();
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas(); // Init
+
+function drawChart() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  if (chartData.length === 0) {
+    if (chartSummary) chartSummary.innerText = 'Peak: — • Low: —';
+    return;
+  }
+  
+  const padding = { top: 18, right: 16, bottom: 34, left: 46 };
+  const plotWidth = canvas.width - padding.left - padding.right;
+  const plotHeight = canvas.height - padding.top - padding.bottom;
+  
+  const values = chartData.map(item => item.value);
+  const minVal = Math.min(...values) * 0.9;
+  const maxVal = Math.max(...values) * 1.1;
+  const range = (maxVal - minVal) || 1;
+  const peakItem = values.reduce((best, value, index) => value > best.value ? { value, index } : best, { value: values[0], index: 0 });
+  const lowItem = values.reduce((best, value, index) => value < best.value ? { value, index } : best, { value: values[0], index: 0 });
+  
+  if (chartSummary) {
+    const peakTime = formatTimestamp(chartData[peakItem.index].timestamp);
+    const lowTime = formatTimestamp(chartData[lowItem.index].timestamp);
+    chartSummary.innerText = `Peak: ${peakItem.value.toFixed(2)} bar @ ${peakTime} • Low: ${lowItem.value.toFixed(2)} bar @ ${lowTime}`;
+  }
+  
+  const stepX = plotWidth / Math.max(chartData.length - 1, 1);
+  
+  ctx.save();
+  ctx.strokeStyle = '#3f3f46';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padding.left, padding.top);
+  ctx.lineTo(padding.left, canvas.height - padding.bottom);
+  ctx.lineTo(canvas.width - padding.right, canvas.height - padding.bottom);
+  ctx.stroke();
+
+  ctx.font = '11px Inter, sans-serif';
+  ctx.fillStyle = '#71717a';
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= 3; i++) {
+    const y = padding.top + (plotHeight * i) / 3;
+    const tickVal = maxVal - (range * i) / 3;
+    ctx.beginPath();
+    ctx.moveTo(padding.left - 6, y);
+    ctx.lineTo(padding.left, y);
+    ctx.stroke();
+    ctx.fillText(tickVal.toFixed(1), padding.left - 10, y + 4);
+  }
+
+  ctx.textAlign = 'center';
+  ctx.fillText('Samples over time', canvas.width / 2, canvas.height - 8);
+  ctx.save();
+  ctx.translate(16, canvas.height / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('Value (bar)', 0, 0);
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.strokeStyle = '#22d3ee';
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  
+  chartData.forEach((item, i) => {
+    const x = padding.left + i * stepX;
+    const y = canvas.height - padding.bottom - ((item.value - minVal) / range) * plotHeight;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  
+  ctx.stroke();
+
+  if (peakItem.index >= 0) {
+    const peakX = padding.left + peakItem.index * stepX;
+    const peakY = canvas.height - padding.bottom - ((peakItem.value - minVal) / range) * plotHeight;
+    ctx.beginPath();
+    ctx.fillStyle = '#f59e0b';
+    ctx.arc(peakX, peakY, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = '11px Inter, sans-serif';
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillText(`Peak ${peakItem.value.toFixed(2)}`, peakX + 8, peakY - 8);
+  }
+
+  if (lowItem.index >= 0) {
+    const lowX = padding.left + lowItem.index * stepX;
+    const lowY = canvas.height - padding.bottom - ((lowItem.value - minVal) / range) * plotHeight;
+    ctx.beginPath();
+    ctx.fillStyle = '#38bdf8';
+    ctx.arc(lowX, lowY, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = '11px Inter, sans-serif';
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText(`Low ${lowItem.value.toFixed(2)}`, lowX + 8, lowY + 16);
+  }
+
+  ctx.restore();
+}
+
+function processIncomingData(val, seq, timestampStr) {
+  emptyState.style.display = 'none';
+  
+  // Push data
+  chartData.push({ value: val, timestamp: timestampStr });
+  if (chartData.length > MAX_POINTS) {
+    chartData.shift();
+  }
+  
+  // Update readouts
+  roValue.innerText = val.toFixed(2);
+  roSeq.innerText = seq;
+  
+  // Extract time from ISO string
+  try { roTime.innerText = timestampStr.split('T')[1].replace('Z', ''); }
+  catch(e) { roTime.innerText = timestampStr; }
+  
+  // Calculate Message Rate (Hz)
+  const now = Date.now();
+  if (lastMsgTime > 0) {
+    const diff = now - lastMsgTime;
+    const hz = 1000 / diff;
+    if(diff > 50) { // filter out immediate bursts causing infinity
+      roRate.innerText = hz.toFixed(1) + ' Hz';
+    }
+  }
+  lastMsgTime = now;
+  
+  drawChart();
+}
+
+// Button Events
+document.getElementById('mqttConnectBtn').addEventListener('click', () => {
+  // Clean up existing connections/sims
+  if(simInterval) clearInterval(simInterval);
+  if(mqttClient) mqttClient.end();
+  
+  chartData = []; lastMsgTime = 0;
+  badgeSim.style.display = 'none';
+  badgeLive.style.display = 'inline-flex';
+  
+  roStatus.innerText = 'Connecting...';
+  roStatus.style.color = '#f59e0b'; // warn color
+  
+  const brokerUrl = document.getElementById('mqttBroker').value;
+  const topic = document.getElementById('mqttTopic').value;
+  
+  mqttClient = mqtt.connect(brokerUrl);
+  
+  mqttClient.on('connect', () => {
+    roStatus.innerText = 'Connected';
+    roStatus.style.color = '#10b981'; // ok color
+    mqttClient.subscribe(topic);
+  });
+  
+  mqttClient.on('message', (t, message) => {
+    try {
+      const payload = JSON.parse(message.toString());
+      processIncomingData(payload.value, payload.seq, payload.timestamp);
+    } catch(err) {
+      console.error("Payload parse error:", err);
+    }
+  });
+  
+  mqttClient.on('error', (err) => {
+    roStatus.innerText = 'Error';
+    roStatus.style.color = '#f43f5e'; // danger color
+  });
+});
+
+document.getElementById('mqttSimBtn').addEventListener('click', () => {
+  if(mqttClient) { mqttClient.end(); mqttClient = null; }
+  if(simInterval) clearInterval(simInterval);
+  
+  chartData = []; lastMsgTime = 0; simSeq = 0;
+  badgeLive.style.display = 'none';
+  badgeSim.style.display = 'inline-flex';
+  
+  roStatus.innerText = 'Simulating...';
+  roStatus.style.color = '#3b82f6'; // info color
+  
+  simInterval = setInterval(() => {
+    // Generate simulated noisy sine wave for pressure
+    const basePressure = 7.0;
+    const noise = (Math.random() - 0.5) * 0.4;
+    const drift = Math.sin(Date.now() / 2000) * 0.5;
+    const val = basePressure + drift + noise;
+    
+    simSeq++;
+    const ts = new Date().toISOString();
+    
+    processIncomingData(val, simSeq, ts);
+  }, 1000); // 1 Hz
+});
+
+</script>
+</body>
+</html>
